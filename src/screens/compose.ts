@@ -3,7 +3,7 @@ import {
   arrangeTasks, checkArrangement, shuffledOrder, slotOptions, slotPool, slotTasks,
 } from '../compose';
 import type { ArrangeTask, SlotTask } from '../compose';
-import { canSpeak, speak } from '../media';
+import { canSpeak, speak, speakSentence } from '../media';
 import { hooks } from '../sessionHooks';
 import { state } from '../store';
 import { btn, h, mount, progressBar } from '../ui';
@@ -93,7 +93,7 @@ function slotCard(t: SlotTask, onNext: () => void): HTMLElement {
         })));
     } else {
       card.append(h('p', { class: wrongTaps ? 'muted' : 'good-text' }, wrongTaps ? `完成（选错 ${wrongTaps} 次）` : '全对！'),
-        ...(canSpeak('en') ? [btn('🔊 听整句', () => speak(t.sentence.en, 'en'), 'ghost')] : []),
+        ...(canSpeak('en') ? [btn('🔊 听整句', () => speakSentence(t.sentence.en), 'ghost')] : []),
         btn('下一句 →', onNext, 'primary big'));
     }
   };

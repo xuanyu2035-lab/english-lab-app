@@ -57,9 +57,11 @@ export function markLearnedIfDone(p: Progress, script: ScriptId, scr: Script, se
 
 export interface DueReview { script: ScriptId; secNo: number; offset: number; dueDate: string; overdueDays: number }
 /** The earliest pending review for one section if it is due (today or overdue), else null. */
+/** A section the Owner said "I know it" for (and proved with a no-peek test) is reviewed less: only the last two review days. */
+export const offsetsFor = (sec: SectionProgress, offsets: number[]): number[] => (sec.known ? offsets.slice(-2) : offsets);
 export function dueReview(sec: SectionProgress, today: string, offsets: number[] = DEFAULT_REVIEW_OFFSETS): { offset: number; dueDate: string; overdueDays: number } | null {
   if (!sec.learnedDay) return null;
-  for (const off of offsets) {
+  for (const off of offsetsFor(sec, offsets)) {
     if (sec.reviews[String(off)]) continue;
     const dueDate = addDays(sec.learnedDay, off);
     const over = daysBetween(dueDate, today);
@@ -70,7 +72,7 @@ export function dueReview(sec: SectionProgress, today: string, offsets: number[]
 /** Next pending review date (for display), or null when all are done. */
 export function nextReviewDate(sec: SectionProgress, offsets: number[] = DEFAULT_REVIEW_OFFSETS): string | null {
   if (!sec.learnedDay) return null;
-  for (const off of offsets) if (!sec.reviews[String(off)]) return addDays(sec.learnedDay, off);
+  for (const off of offsetsFor(sec, offsets)) if (!sec.reviews[String(off)]) return addDays(sec.learnedDay, off);
   return null;
 }
 export function allDueReviews(p: Progress, scripts: Record<ScriptId, Script>, today: string, offsets: number[]): DueReview[] {

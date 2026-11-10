@@ -1,5 +1,5 @@
 /** 错 → 对 cards: see the wrong sentence, think where it is wrong, then see the right one and why. */
-import { canSpeak, speak } from '../media';
+import { canSpeak, speak, speakSentence } from '../media';
 import { hooks } from '../sessionHooks';
 import { state } from '../store';
 import { btn, h, mount, progressBar } from '../ui';
@@ -27,7 +27,7 @@ export function renderFixes() {
       if (!revealed) card.append(h('p', { class: 'muted' }, '先想一想：哪里不对？'), btn('看答案', () => { revealed = true; draw(); }, 'primary big'));
       else {
         card.append(h('div', { class: 'muted small' }, '正确说法：'), h('div', { class: 'en-big right-text' }, c.right),
-          ...(canSpeak('en') ? [btn('🔊 听', () => speak(c.right, 'en'), 'ghost')] : []),
+          ...(canSpeak('en') ? [btn('🔊 听', () => speakSentence(c.right), 'ghost')] : []),
           h('div', { class: 'note' }, c.why),
           btn(i + 1 >= cards.length ? '完成' : '下一张 →', () => {
             seenCount++; i++;

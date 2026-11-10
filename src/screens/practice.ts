@@ -1,6 +1,6 @@
 import { blankify, firstLetters, sectionSentences, sentencesUpTo } from '../content';
 import { todayStr } from '../dates';
-import { canSpeak, loadRecording, recordSupported, saveRecording, speak, startRecording } from '../media';
+import { canSpeak, loadRecording, recordSupported, saveRecording, speak, speakSentence, startRecording } from '../media';
 import {
   applyRating, completeReview, getSectionProgress, getSentenceProgress, markLearnedIfDone,
 } from '../schedule';
@@ -19,11 +19,12 @@ export const go = (hash: string) => {
 export function topbar(title: string, backHash: string | null, right?: Node): HTMLElement {
   if (hooks.active) {
     const timer = h('span', { class: 'session-timer', 'aria-label': '本段剩余时间' }, hooks.remaining());
+    const skip = h('button', { class: 'back quit', type: 'button', 'aria-label': '跳过这段', onclick: () => hooks.skip() }, '⏭ 跳过这段');
     const quit = h('button', { class: 'back quit', type: 'button', 'aria-label': '结束这节课', onclick: () => hooks.quit() }, '✕ 结束');
     return h('header', { class: 'topbar' },
       hooks.immersive ? h('span') : (backHash ? h('a', { class: 'back', href: `#${backHash}` }, '← 返回') : h('span')),
       h('div', { class: 'topbar-title' }, title),
-      h('div', { class: 'topbar-right' }, timer, quit));
+      h('div', { class: 'topbar-right' }, timer, skip, quit));
   }
   return h('header', { class: 'topbar' },
     backHash ? h('a', { class: 'back', href: `#${backHash}`, 'aria-label': '返回' }, '← 返回') : h('span'),
@@ -36,7 +37,7 @@ export const exitTo = (hash: string) => { if (hooks.active) hooks.advance(); els
 // ---------- 出声练工具：听 / 录音 / 回放 ----------
 export function audioTools(id: string, text: string): HTMLElement {
   const wrap = h('div', { class: 'audio-tools' });
-  if (canSpeak('en')) wrap.append(btn('🔊 听', () => speak(text, 'en'), 'ghost'));
+  if (canSpeak('en')) wrap.append(btn('🔊 听', () => speakSentence(text), 'ghost'));
   if (recordSupported()) {
     let rec: Awaited<ReturnType<typeof startRecording>> | null = null;
     const recBtn = h('button', { class: 'btn ghost', type: 'button' }, '🎙 录音');
@@ -138,7 +139,7 @@ function chunksCard(s: Sentence, onNext: () => void): HTMLElement {
   let lit = 0;
   const row = h('div', { class: 'chunks' });
   const zhLine = h('div', { class: 'zh' }, '点下面的块，一块一块读');
-  const nextBtn = h('button', { class: 'btn primary big', type: 'button', disabled: true }, '全部读完了 →');
+  const nextBtn = h('button', { class: 'btn primary big', type: 'button' }, '读完了 →');
   nextBtn.addEventListener('click', onNext);
   const render = () => {
     row.replaceChildren(...s.chunks.map((c, i) => {
@@ -147,7 +148,6 @@ function chunksCard(s: Sentence, onNext: () => void): HTMLElement {
         if (i >= lit) lit = i + 1;
         zhLine.textContent = c.zh;
         if (canSpeak('en')) speak(c.en, 'en');
-        if (lit >= s.chunks.length) nextBtn.removeAttribute('disabled');
         render();
       });
       return b;
@@ -156,7 +156,7 @@ function chunksCard(s: Sentence, onNext: () => void): HTMLElement {
   render();
   return h('div', { class: 'card focus' }, row, zhLine,
     h('div', { class: 'muted small' }, '每点一块会朗读那一块；也可以自己先读再点。'),
-    btn('整句再听一遍', () => speak(s.en, 'en'), 'ghost'), nextBtn);
+    btn('整句再听一遍', () => speakSentence(s.en), 'ghost'), nextBtn);
 }
 function cueCard(s: Sentence, onNext: () => void): HTMLElement {
   return h('div', { class: 'card focus' },
@@ -164,7 +164,7 @@ function cueCard(s: Sentence, onNext: () => void): HTMLElement {
     h('div', { class: 'cue-big' }, s.cue),
     h('div', { class: 'en-dim' }, s.en),
     h('div', { class: 'zh' }, s.zh),
-    canSpeak('en') ? h('div', { class: 'audio-tools' }, btn('🔊 听', () => speak(s.en, 'en'), 'ghost')) : null,
+    canSpeak('en') ? h('div', { class: 'audio-tools' }, btn('🔊 听', () => speakSentence(s.en), 'ghost')) : null,
     btn('记住了 →', onNext, 'primary big'));
 }
 
@@ -183,6 +183,10 @@ function blanksNode(s: Sentence): HTMLElement {
 /** A retrieval card for one level (L1..L4). */
 export function recallCard(opts: {
   sentence: Sentence; phase: 'L1' | 'L2' | 'L25' | 'L3' | 'L4'; scriptId: ScriptId; onRate: (r: Rating) => void;
+  /** "skip this sentence" without rating it */
+  onSkip?: () => void;
+  /** extra controls shown under the card (level jumping etc.) */
+  bar?: Node;
 }): HTMLElement {
   const { sentence: s, phase } = opts;
   let revealed = phase === 'L1';
@@ -212,11 +216,64 @@ export function recallCard(opts: {
         phase === 'L4' && !hint ? btn('给我线索', () => { hint = h('div', { class: 'cue-big small' }, s.cue); draw(); }, 'ghost') : null));
   };
   draw();
-  return h('div', { class: 'card focus' }, body, audioTools(sentenceId(opts.scriptId, s.no), s.en), ratings);
+  return h('div', { class: 'card focus' }, body, audioTools(sentenceId(opts.scriptId, s.no), s.en), ratings,
+    opts.onSkip ? h('div', { class: 'row-center skip-row' }, btn('跳过这句 ⏭', opts.onSkip, 'ghost')) : null,
+    opts.bar ?? null);
+}
+
+// ---------- 跳级条：想从哪一级练都行 ----------
+type Jump = 'understand' | 'L1' | 'L2' | 'L3' | 'L4';
+const JUMP_LABEL: Record<Jump, string> = { understand: '先看懂', L1: '全文', L2: '挖空', L3: '只看线索', L4: '什么都不看' };
+/** Turn a wanted level into a phase that exists for this sentence (e.g. no blanks → skip L2). */
+export function resolvePhase(s: Sentence, want: Jump, firstLetterHint: boolean): Phase {
+  const phases = phasesFor(s, firstLetterHint);
+  if (phases.includes(want)) return want;
+  const lvl = LEVEL_OF[want] ?? 1;
+  return phases.find((ph) => (LEVEL_OF[ph] ?? 0) >= lvl) ?? 'L3';
+}
+function jumpBar(o: {
+  s: Sentence; phase: Phase; onJump: (p: Jump) => void; onKnow: () => void; onPrev?: () => void; onNext?: () => void;
+}): HTMLElement {
+  const jumps = (['understand', 'L1', 'L2', 'L3', 'L4'] as Jump[]).filter((j) => j !== 'L2' || o.s.blank_keys.length > 0);
+  return h('div', { class: 'jump-bar' },
+    h('div', { class: 'muted small' }, '想跳到哪一级都行：'),
+    h('div', { class: 'row-wrap tight' }, jumps.map((j) => h('button', {
+      class: `chip-btn ${o.phase === j ? 'on' : ''}`, type: 'button', 'aria-pressed': String(o.phase === j), onclick: () => o.onJump(j),
+    }, JUMP_LABEL[j]))),
+    h('div', { class: 'row-wrap tight' },
+      btn('✅ 这句我会了', o.onKnow, 'primary'),
+      o.onPrev ? btn('⏮ 上一句', o.onPrev, 'ghost') : null,
+      o.onNext ? btn('下一句 ⏭', o.onNext, 'ghost') : null));
+}
+
+/** "我会了": do one no-peek (L4) test; if it can be said, mark as known; if not, offer to go back and practise. */
+export function knowTest(scriptId: ScriptId, sentences: Sentence[], title: string, backHash: string) {
+  const scr = scripts()![scriptId];
+  const today = todayStr();
+  chainRun({
+    scriptId, title, sentences, passes: ['none'], backHash, testMode: true,
+    doneText: '“我会了”测试做完了',
+    onDone: (p) => {
+      let next = p;
+      for (const secNo of new Set(sentences.map((x) => x.section_no))) {
+        const was = getSectionProgress(next, scriptId, secNo).learnedDay;
+        next = markLearnedIfDone(next, scriptId, scr, secNo, today);
+        const sec = getSectionProgress(next, scriptId, secNo);
+        if (!was && sec.learnedDay) next = { ...next, sections: { ...next.sections, [sectionKey(scriptId, secNo)]: { ...sec, known: true } } };
+      }
+      return next;
+    },
+  });
 }
 
 // ---------- 学一节 ----------
-export function learnSection(scriptId: ScriptId, secNo: number) {
+export interface LearnOpts {
+  /** start at this sentence number (default: first sentence not yet passed) */
+  startNo?: number;
+  /** start every sentence of this run at this level */
+  level?: 'understand' | 'L1' | 'L2' | 'L3' | 'L4';
+}
+export function learnSection(scriptId: ScriptId, secNo: number, opts: LearnOpts = {}) {
   const scr = scripts()![scriptId];
   const sents = sectionSentences(scr, secNo);
   const sec = scr.sections.find((x) => x.no === secNo);
@@ -227,10 +284,10 @@ export function learnSection(scriptId: ScriptId, secNo: number) {
   const fl = () => state.settings.firstLetterHint;
   const init = (i: number) => {
     const sp = getSentenceProgress(state.progress, scriptId, sents[i].no);
-    phase = startPhase(sents[i], sp.level, sp.n, fl());
+    phase = opts.level ? resolvePhase(sents[i], opts.level, fl()) : startPhase(sents[i], sp.level, sp.n, fl());
   };
-  // start at the first sentence that has not passed L4
-  idx = Math.max(0, sents.findIndex((s) => !getSentenceProgress(state.progress, scriptId, s.no).passedL4));
+  const startAt = opts.startNo ? sents.findIndex((s) => s.no === opts.startNo) : -1;
+  idx = startAt !== -1 ? startAt : Math.max(0, sents.findIndex((s) => !getSentenceProgress(state.progress, scriptId, s.no).passedL4));
   init(idx);
   const finishedSentenceAt = () => sents.every((s) => getSentenceProgress(state.progress, scriptId, s.no).passedL4);
 
@@ -274,17 +331,25 @@ export function learnSection(scriptId: ScriptId, secNo: number) {
           btn('接着连说（从第 1 句连到这里）', () => go(`/script/${scriptId}/chain/${secNo}`), hooks.active ? 'ghost' : 'primary big'),
           hooks.active ? null : btn('回到小节列表', () => go(back), 'ghost'))));
   };
+  const move = (d: number) => { idx = Math.min(sents.length - 1, Math.max(0, idx + d)); init(idx); render(); };
   const render = () => {
     const s = sents[idx];
     const label = PHASE_LABEL[phase];
     let card: HTMLElement;
     const advance = () => { const ph = phasesFor(s, fl()); phase = ph[ph.indexOf(phase) + 1]; render(); };
+    const bar = jumpBar({
+      s, phase,
+      onJump: (j) => { phase = resolvePhase(s, j, fl()); render(); },
+      onKnow: () => knowTest(scriptId, [s], `我会了：第 ${s.no} 句`, back),
+      onPrev: idx > 0 ? () => move(-1) : undefined,
+      onNext: idx < sents.length - 1 ? () => move(1) : undefined,
+    });
     if (phase === 'understand') card = understandCard(s, scr, advance);
     else if (phase === 'chunks') card = chunksCard(s, advance);
     else if (phase === 'cue') card = cueCard(s, advance);
     else card = recallCard({ sentence: s, phase: phase as 'L1', scriptId, onRate: rate });
     mount(root(), topbar(`小节 ${secNo} · ${sec.name}`, back),
-      h('div', { class: 'screen narrow' }, sentenceHeader(s, label, idx, sents.length), card));
+      h('div', { class: 'screen narrow' }, sentenceHeader(s, label, idx, sents.length), card, bar));
   };
   render();
 }
@@ -302,6 +367,8 @@ export interface ChainOpts {
   backHash: string;
   onDone?: (p: Progress) => Progress;
   doneText?: string;
+  /** "我会了" test: sentences that were not said smoothly get a button to go back and practise them */
+  testMode?: boolean;
 }
 export function applyChainRating(progress: Progress, scriptId: ScriptId, s: Sentence, mode: 'cue' | 'none', r: Rating): Progress {
   const id = sentenceId(scriptId, s.no);
@@ -315,6 +382,7 @@ export function chainRun(o: ChainOpts) {
   const tasks = o.passes.flatMap((mode) => o.sentences.map((s) => ({ s, mode })));
   const tally = { smooth: 0, stuck: 0, blank: 0 };
   const trouble = new Map<number, Sentence>();
+  let skipped = 0;
   let i = 0;
   const finish = async () => {
     let p = state.progress;
@@ -325,9 +393,10 @@ export function chainRun(o: ChainOpts) {
         h('div', { class: 'card focus center' },
           h('div', { class: 'big-emoji' }, trouble.size ? '💪' : '🎉'),
           h('h2', {}, o.doneText ?? '这一轮完成了'),
-          h('p', {}, `顺 ${tally.smooth} · 卡了一下 ${tally.stuck} · 说不出来 ${tally.blank}`),
-          trouble.size ? h('div', { class: 'trouble' }, h('div', { class: 'muted small' }, '这些句子还不稳，下次多练：'),
-            ...[...trouble.values()].map((s) => h('div', { class: 'trouble-row' }, `第 ${s.no} 句  ${s.cue}`))) : h('p', { class: 'good-text' }, '全部都很顺！'),
+          h('p', {}, `顺 ${tally.smooth} · 卡了一下 ${tally.stuck} · 说不出来 ${tally.blank}${skipped ? ` · 跳过 ${skipped}` : ''}`),
+          trouble.size ? h('div', { class: 'trouble' }, h('div', { class: 'muted small' }, o.testMode ? '这些句子还没到“什么都不看也说得出”，点“去练”退回去练：' : '这些句子还不稳，下次多练：'),
+            ...[...trouble.values()].map((s) => h('div', { class: 'trouble-row' }, h('span', {}, `第 ${s.no} 句  ${s.cue}`),
+              h('a', { class: 'btn ghost small-btn', href: `#/script/${o.scriptId}/learn/${s.section_no}/${s.no}` }, '去练')))) : h('p', { class: 'good-text' }, o.testMode && !skipped ? '全部说得出来！已标为“已会”，之后会少出现。' : tally.smooth ? '说的都很顺！' : ''),
           btn(hooks.active ? '继续 →' : '回去', () => exitTo(o.backHash), 'primary big'))));
   };
   const render = () => {
@@ -336,6 +405,12 @@ export function chainRun(o: ChainOpts) {
     const label = mode === 'cue' ? '连说 · 只看线索' : '连说 · 什么都不看';
     const card = recallCard({
       sentence: s, phase: mode === 'cue' ? 'L3' : 'L4', scriptId: o.scriptId,
+      onSkip: async () => {
+        skipped++;
+        i++;
+        if (hooks.active && hooks.timeUp()) { await finish(); return; }
+        render();
+      },
       onRate: async (r) => {
         tally[r]++;
         if (r !== 'smooth') trouble.set(s.no, s);

@@ -78,6 +78,7 @@ export interface SentenceProgress {
 export interface SectionProgress {
   learnedDay?: string; // YYYY-MM-DD when every sentence first passed L4
   reviews: Record<string, string>; // offset -> date done
+  known?: boolean; // marked "I know it" and passed the no-peek test: fewer reviews
   chainDay?: string;
 }
 export interface Progress {
@@ -98,6 +99,10 @@ export interface Settings {
   onboarded: boolean;
   newWordsPerDay: number;
   reviewsPerDay: number;
+  /** chosen English voice (voiceURI); null = automatic (US English, prefers Natural/Neural/Enhanced/Premium) */
+  voiceURI: string | null;
+  speechRate: number; // 0.6 .. 1.2
+  repeatCount: number; // times each sentence is read aloud, 1 .. 5
 }
 export const DEFAULT_SETTINGS: Settings = {
   interviewDate: null,
@@ -111,6 +116,9 @@ export const DEFAULT_SETTINGS: Settings = {
   onboarded: false,
   newWordsPerDay: 10,
   reviewsPerDay: 40,
+  voiceURI: null,
+  speechRate: 0.9,
+  repeatCount: 1,
 };
 export const emptyProgress = (): Progress => ({ sentences: {}, sections: {}, fullRuns: {}, checklist: {} });
 

@@ -35,12 +35,12 @@ async function check(page, label) {
   const r = await page.evaluate(() => {
     const vw = document.documentElement.clientWidth;
     const bad = [];
-    for (const el of document.querySelectorAll('button, a.btn, label.btn, input, select')) {
+    for (const el of document.querySelectorAll('button, a.btn, a.chip-btn, label.btn, input, select')) {
       const b = el.getBoundingClientRect();
       if (b.width === 0 || b.height === 0) continue;
       if (el.classList.contains('file-input')) continue;
       if (b.left < -1 || b.right > vw + 1) bad.push(`${el.tagName}:${(el.textContent || el.id || '').trim().slice(0, 20)} [${Math.round(b.left)}..${Math.round(b.right)}]`);
-      if (el.matches('button, a.btn, label.btn') && !el.classList.contains('gl') && !el.classList.contains('chunk') && b.height < 40) bad.push(`small:${(el.textContent || '').trim().slice(0, 20)} h=${Math.round(b.height)}`);
+      if (el.matches('button, a.btn, a.chip-btn, label.btn') && !el.classList.contains('gl') && !el.classList.contains('chunk') && b.height < 40) bad.push(`small:${(el.textContent || '').trim().slice(0, 20)} h=${Math.round(b.height)}`);
     }
     // is any primary button covered by another element at its centre?
     for (const el of document.querySelectorAll('button.primary, button.rate')) {
@@ -72,11 +72,11 @@ async function learnWholeSection(page, size, secNo, shootEarly) {
     if (await has(page, /我看懂了/)) {
       if (shootEarly && !shotUnderstand) { await shot(page, size, 'learn-understand'); shotUnderstand = true; }
       await click(page, /我看懂了/);
-    } else if (await has(page, /全部读完了/)) {
+    } else if (await has(page, /读完了/)) {
       const chunks = page.locator('.chunk');
       const n = await chunks.count();
       for (let i = 0; i < n; i++) { await chunks.nth(i).click(); if (i === 0 && shootEarly && !shotChunks) { await shot(page, size, 'learn-chunks'); shotChunks = true; } }
-      await click(page, /全部读完了/);
+      await click(page, /读完了/);
     } else if (await has(page, /记住了/)) {
       await click(page, /记住了/);
     } else {
@@ -101,10 +101,10 @@ async function runLesson(page, size, { fastForwardAfter = null } = {}) {
       await click(page, /跳过休息/);
     } else if (await has(page, /开始这一组/)) await click(page, /开始这一组/);
     else if (await has(page, /我看懂了/)) await click(page, /我看懂了/);
-    else if (await has(page, /全部读完了/)) {
+    else if (await has(page, /读完了/)) {
       const chunks = page.locator('.chunk'); const n = await chunks.count();
       for (let i = 0; i < n; i++) await chunks.nth(i).click();
-      await click(page, /全部读完了/);
+      await click(page, /读完了/);
     } else if (await has(page, '看意思')) await click(page, '看意思');
     else if (await has(page, /^记住了/)) await click(page, /^记住了/);
     else if (await page.locator('.choice:not([disabled])').count()) await page.locator('.choice:not([disabled])').first().click();
@@ -133,18 +133,23 @@ async function freshPage(size, { clock = false } = {}) {
   await page.setInputFiles('#content-file', content);
   await page.waitForSelector('text=第一次打开');
   await click(page, '开始使用');
-  await page.waitForSelector('text=开始今天的课');
+  await page.waitForSelector('text=我的两篇稿子');
   return { ctx, page, errors };
 }
 
 async function sessionFlow(size, minutes, fastForwardAfter) {
   const { ctx, page, errors } = await freshPage(size, { clock: true });
+  await page.goto(`${URL}#/more`);
+  await page.waitForSelector('text=开始今天的课');
   await page.getByRole('radio', { name: `${minutes} 分钟` }).click();
-  await shot(page, size, '20-home-start');
+  await shot(page, size, '20-more-menu');
   await click(page, /开始今天的课/);
   await page.waitForSelector('text=今天的安排');
   await shot(page, size, '20-session-plan');
   await click(page, /开始 ▶/);
+  // the Owner may skip a whole segment at any time
+  await page.getByRole('button', { name: /跳过这段/ }).waitFor();
+  await click(page, /跳过这段/);
   try { await runLesson(page, size, { fastForwardAfter }); } catch (e) { console.log('LESSON FAIL', await page.evaluate(() => document.body.innerText.slice(0, 400))); throw e; }
   await shot(page, size, '23-session-summary');
   if (!(await page.getByText('今天学会了什么').count())) failures.push(`${size.name}: no summary card`);
@@ -287,14 +292,161 @@ async function vocabFlow(size) {
   // wipe progress on this "device", then import the file back
   await page.evaluate(() => new Promise((res) => { const r = indexedDB.open('englishlab'); r.onsuccess = () => { const t = r.result.transaction('kv', 'readwrite'); t.objectStore('kv').delete('vocab'); t.objectStore('kv').delete('progress'); t.oncomplete = () => res(true); }; }));
   await page.setInputFiles('#backup-file', bPath);
-  await page.waitForSelector('text=今天要做的事');
+  await page.waitForSelector('text=我的两篇稿子');
   const after = await page.evaluate(() => new Promise((res) => { const r = indexedDB.open('englishlab'); r.onsuccess = () => { const t = r.result.transaction('kv').objectStore('kv').get('vocab'); t.onsuccess = () => res(JSON.stringify(t.result)); }; }));
   if (before !== after) failures.push(`${size.name}: progress export/import round trip changed the data`);
   rmSync(bPath);
-  await page.goto(`${URL}#/`);
+  await page.goto(`${URL}#/more`);
   await page.waitForSelector('text=粤英夹杂词库');
-  await shot(page, size, '43-home-with-vocab');
+  await shot(page, size, '43-more-with-vocab');
   if (errors.length) failures.push(`${size.name}: vocab page errors ${errors.join(';')}`);
+  await ctx.close();
+}
+
+const idbGet = (page, key) => page.evaluate((k) => new Promise((res) => { const r = indexedDB.open('englishlab'); r.onsuccess = () => { const q = r.result.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); }; }), key);
+
+/** Free choice: only two scripts on the home page, jump to any level, "I know it" tests, skipping. */
+async function freedomFlow(size) {
+  const { ctx, page, errors } = await freshPage(size);
+  const text = await page.locator('#app').innerText();
+  if (!/面试自我介绍/.test(text) || !/4104/.test(text)) failures.push(`${size.name}: home does not show both scripts`);
+  for (const bad of ['粤英夹杂词库', '开始今天的课', '造句', '难读词']) if (text.includes(bad)) failures.push(`${size.name}: home still shows "${bad}" (should be under 更多)`);
+  if (!(await page.getByRole('link', { name: /更多/ }).count())) failures.push(`${size.name}: no 更多 menu on home`);
+  await shot(page, size, '50-home-two-scripts');
+  await page.goto(`${URL}#/more`);
+  await page.waitForSelector('text=开始今天的课');
+  for (const need of ['粤英夹杂词库', '造句', '设置', '帮助']) if (!(await page.getByText(need).count())) failures.push(`${size.name}: 更多 is missing "${need}"`);
+
+  // pick panel on the script page
+  await page.goto(`${URL}#/script/self_intro`);
+  await page.waitForSelector('.sec-list');
+  await page.locator('details.pick summary').first().click();
+  await shot(page, size, '51-pick-panel');
+
+  // start at sentence 1, straight at "什么都不看"
+  await page.goto(`${URL}#/script/self_intro/learn/1/1/L4`);
+  await page.waitForSelector('.recall-body');
+  if (!/第 1 句/.test(await page.locator('.sent-head').innerText()) || !/L4/.test(await page.locator('.chip.amber').innerText())) failures.push(`${size.name}: could not start at sentence 1 / L4`);
+  await shot(page, size, '52-jump-L4');
+  await click(page, '全文');
+  if (!/L1/.test(await page.locator('.chip.amber').innerText())) failures.push(`${size.name}: jump to 全文 failed`);
+  if (await has(page, '挖空')) {
+    await click(page, '挖空');
+    if (!/L2/.test(await page.locator('.chip.amber').innerText())) failures.push(`${size.name}: jump to 挖空 failed`);
+  }
+  await click(page, '只看线索');
+  if (!/L3/.test(await page.locator('.chip.amber').innerText())) failures.push(`${size.name}: jump to 只看线索 failed`);
+  await click(page, /下一句 ⏭/);
+  if (!/第 2 句/.test(await page.locator('.sent-head').innerText())) failures.push(`${size.name}: 下一句 did not move on`);
+  await click(page, /上一句/);
+  if (!/第 1 句/.test(await page.locator('.sent-head').innerText())) failures.push(`${size.name}: 上一句 did not go back`);
+
+  // "I know it" on a sentence: pass, then it is marked as known
+  await click(page, /这句我会了/);
+  await page.waitForSelector('.recall-body');
+  await shot(page, size, '53-know-test');
+  await click(page, '看答案');
+  await click(page, '顺', { exact: true });
+  await page.waitForSelector('text=已标为');
+  await shot(page, size, '54-know-passed');
+  let prog = await idbGet(page, 'progress');
+  if (!prog.sentences['self_intro-1']?.passedL4) failures.push(`${size.name}: 我会了 pass did not mark the sentence as known`);
+
+  // "I know it" but cannot say it: sent back to practise
+  await page.goto(`${URL}#/script/self_intro/learn/1/2/L1`);
+  await click(page, /这句我会了/);
+  await click(page, '看答案');
+  await click(page, '说不出来');
+  await page.waitForSelector('text=去练');
+  await shot(page, size, '55-know-failed');
+  prog = await idbGet(page, 'progress');
+  if (prog.sentences['self_intro-2']?.passedL4) failures.push(`${size.name}: failed 我会了 test still marked as known`);
+  await page.getByRole('link', { name: '去练' }).first().click();
+  await page.waitForSelector('.sent-head');
+  if (!/第 2 句/.test(await page.locator('.sent-head').innerText())) failures.push(`${size.name}: 去练 did not open the failed sentence`);
+
+  // "I know it" for a whole section
+  await page.goto(`${URL}#/script/self_intro`);
+  await page.waitForSelector('.sec-list');
+  await page.getByRole('button', { name: '✅ 这节我会了' }).nth(1).click();
+  let guard = 0;
+  while (guard++ < 40 && !(await page.getByText('已标为').count())) {
+    if (await has(page, '看答案')) await click(page, '看答案');
+    await click(page, '顺', { exact: true });
+    await page.waitForTimeout(60);
+  }
+  await page.waitForSelector('text=已标为');
+  prog = await idbGet(page, 'progress');
+  const sec = prog.sections['self_intro:s2'];
+  if (!sec?.learnedDay || !sec.known) failures.push(`${size.name}: section 我会了 did not stamp learned+known ${JSON.stringify(sec)}`);
+  await shot(page, size, '56-section-known');
+
+  // skip a sentence in a chain run
+  await page.goto(`${URL}#/script/self_intro/chain/1`);
+  await page.waitForSelector('.recall-body');
+  await click(page, /跳过这句/);
+  if (!/第 2 \/ /.test(await page.locator('.sent-head').innerText())) failures.push(`${size.name}: 跳过这句 did not move on`);
+
+  // help page
+  await page.goto(`${URL}#/help`);
+  await page.waitForSelector('text=让声音更自然');
+  for (const need of ['iPad', '安卓', 'Windows']) if (!(await page.getByText(need).count())) failures.push(`${size.name}: help page lacks ${need}`);
+  await shot(page, size, '57-help');
+  if (errors.length) failures.push(`${size.name}: freedom page errors ${errors.join(';')}`);
+  await ctx.close();
+}
+
+/** Voice settings, with a fake speech engine so the result does not depend on this computer. */
+async function voiceFlow(size) {
+  const ctx = await browser.newContext({ viewport: { width: size.w, height: size.h }, isMobile: size.mobile, hasTouch: size.mobile, deviceScaleFactor: 1, acceptDownloads: true });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.addInitScript(() => {
+    const mk = (name, lang) => ({ name, lang, voiceURI: name, localService: true, default: false });
+    const voices = [mk('Daniel', 'en-GB'), mk('Alex', 'en-US'), mk('Microsoft Aria Online (Natural) - English (United States)', 'en-US'), mk('Google 普通话', 'zh-CN')];
+    window.__spoken = [];
+    window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; this.voice = null; this.rate = 1; this.lang = ''; } };
+    const fake = { getVoices: () => voices, cancel() { window.__spoken = []; }, speak(u) { window.__spoken.push({ text: u.text, voice: u.voice && u.voice.name, rate: u.rate, lang: u.lang }); }, addEventListener() {}, removeEventListener() {} };
+    Object.defineProperty(window, 'speechSynthesis', { value: fake, configurable: true });
+  });
+  await page.goto(URL);
+  await page.waitForSelector('#app .screen');
+  await page.setInputFiles('#content-file', content);
+  await page.waitForSelector('text=第一次打开');
+  await click(page, '开始使用');
+  await page.waitForSelector('text=我的两篇稿子');
+  await page.goto(`${URL}#/settings`);
+  await page.waitForSelector('.voice-row');
+  const rows = await page.locator('.voice-row').count();
+  if (rows !== 4) failures.push(`${size.name}: expected auto + 3 English voices, got ${rows}`);
+  if (await page.locator('.voice-row', { hasText: '普通话' }).count()) failures.push(`${size.name}: non-English voice listed`);
+  const first = await page.locator('.voice-row').nth(1).innerText();
+  if (!/Natural/.test(first)) failures.push(`${size.name}: the most natural American voice is not listed first`);
+  await shot(page, size, '60-voice-settings');
+  // the automatic choice is the American Natural one, never the British one
+  await page.locator('.voice-row').nth(0).getByRole('button', { name: /试听/ }).click();
+  let spoken = await page.evaluate(() => window.__spoken);
+  if (!spoken.length || !/Natural/.test(spoken[0].voice || '')) failures.push(`${size.name}: automatic voice is not the Natural American one: ${JSON.stringify(spoken)}`);
+  // every voice can be previewed
+  await page.locator('.voice-row', { hasText: 'Daniel' }).getByRole('button', { name: /试听/ }).click();
+  spoken = await page.evaluate(() => window.__spoken);
+  if (spoken[0]?.voice !== 'Daniel') failures.push(`${size.name}: preview of a chosen voice did not use it`);
+  // pick Alex, rate 0.7, repeat 3
+  await page.locator('.voice-row', { hasText: 'Alex' }).getByRole('button', { name: '用这个' }).click();
+  await page.locator('#f-rate').fill('0.7');
+  await page.locator('#f-rate').dispatchEvent('change');
+  await page.selectOption('#f-repeat', '3');
+  await page.waitForTimeout(300);
+  const s = await idbGet(page, 'settings');
+  if (s.voiceURI !== 'Alex' || s.speechRate !== 0.7 || s.repeatCount !== 3) failures.push(`${size.name}: voice settings not saved ${JSON.stringify(s)}`);
+  // a sentence read aloud uses those settings
+  await page.goto(`${URL}#/script/self_intro/learn/1`);
+  await page.waitForSelector('.audio-tools');
+  await click(page, /🔊 听/);
+  spoken = await page.evaluate(() => window.__spoken);
+  if (spoken.length !== 3 || spoken.some((u) => u.voice !== 'Alex' || Math.abs(u.rate - 0.7) > 0.001)) failures.push(`${size.name}: read-aloud ignored the settings ${JSON.stringify(spoken)}`);
+  if (errors.length) failures.push(`${size.name}: voice page errors ${errors.join(';')}`);
   await ctx.close();
 }
 
@@ -313,7 +465,7 @@ for (const size of SIZES) {
   await page.waitForSelector('text=第一次打开');
   await shot(page, size, '02-onboarding');
   await click(page, '开始使用');
-  await page.waitForSelector('text=开始今天的课');
+  await page.waitForSelector('text=我的两篇稿子');
   await shot(page, size, '03-home');
 
   await page.goto(`${URL}#/script/self_intro`);
@@ -361,6 +513,8 @@ for (const size of SIZES) {
   }
   if (errors.length) failures.push(`${size.name}: page errors ${errors.join(' ; ')}`);
   await ctx.close();
+  await freedomFlow(size);
+  await voiceFlow(size);
   await vocabFlow(size);
   await sessionFlow(size, 30, null);
   if (size.name === 'desktop-1366') await sessionFlow({ ...size, name: 'desktop-1366-ff' }, 60, 4);

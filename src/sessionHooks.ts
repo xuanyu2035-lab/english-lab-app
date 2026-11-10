@@ -6,6 +6,8 @@ export const hooks = {
   timeUp: (): boolean => false,
   /** leave the current activity and move on (next activity / rest / summary) */
   advance: (): void => undefined,
+  /** skip the rest of this segment and go to the next one (or the rest / summary) */
+  skip: (): void => undefined,
   /** end the whole lesson now (asks first) */
   quit: (): void => undefined,
   /** "mm:ss" left in the current segment */

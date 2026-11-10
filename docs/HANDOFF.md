@@ -68,3 +68,10 @@ node scripts/e2e-screenshots.mjs --private --no-build   # 用真实内容包跑�
 
 ## 已知限制
 见 `docs/最终汇报.md` 的“已知问题”。
+
+## 第二轮改动（自由选择 + 美式声音）
+- 首页只放两篇稿子；其余入口在 `src/screens/more.ts`（#/more），帮助页 `src/screens/help.ts`（#/help）。
+- 学一节：路由 `#/script/<id>/learn/<节>/<起始句号>/<级别>`（后两项可省略；级别 understand|L1|L2|L3|L4）。跳级条、“我会了”（`knowTest`，复用 chainRun 的 testMode）都在 `screens/practice.ts`。
+- “我会了”通过且整节首次学会 → `SectionProgress.known = true`，复习只剩 offsets 的最后两项（`schedule.offsetsFor`）。
+- 声音：`media.ts` 的 `voiceScore/listEnglishVoices/chooseEnglishVoice`（美式优先，Natural/Neural/Enhanced/Premium 优先，英式最后）；设置项 `voiceURI / speechRate / repeatCount`；`main.ts` 里 `configureSpeech` 接上设置。整句朗读用 `speakSentence`（按重复次数）。
+- 测试：`tests/freedom.test.ts`；e2e 的 `freedomFlow / voiceFlow`（用假的语音引擎）。

@@ -1,9 +1,11 @@
 import './style.css';
-import { initTts } from './media';
+import { configureSpeech, initTts } from './media';
 import { loadState, scripts, state } from './store';
 import { h, mount } from './ui';
 import { renderChecklist, renderHard, renderNotes, renderRescue } from './screens/extras';
 import { renderHome, renderScript } from './screens/home';
+import { renderMore } from './screens/more';
+import { renderHelp } from './screens/help';
 import { renderComposeHub, runCompose } from './screens/compose';
 import { renderReference } from './screens/reference';
 import { renderFixes } from './screens/fixes';
@@ -25,6 +27,8 @@ function route() {
   if (needSetup && parts[0] !== 'settings') return renderOnboarding();
   if (parts[0] === 'settings') return renderSettings();
   if (!scripts()) return renderHome();
+  if (parts[0] === 'more') return renderMore();
+  if (parts[0] === 'help') return renderHelp();
   if (parts[0] === 'hard') return renderHard();
   if (parts[0] === 'vocab') {
     if (!parts[1]) return renderVocabHome();
@@ -44,7 +48,13 @@ function route() {
     const id = parts[1];
     const a = parts[2];
     if (!a) return renderScript(id);
-    if (a === 'learn') return learnSection(id, Number(parts[3]));
+    if (a === 'learn') {
+      const lv = parts[5];
+      return learnSection(id, Number(parts[3]), {
+        startNo: Number(parts[4]) || undefined,
+        level: lv === 'understand' || lv === 'L1' || lv === 'L2' || lv === 'L3' || lv === 'L4' ? lv : undefined,
+      });
+    }
     if (a === 'chain') return chainSection(id, Number(parts[3]));
     if (a === 'review') return reviewSection(id, Number(parts[3]), Number(parts[4]));
     if (a === 'full') return fullRun(id);
@@ -63,6 +73,7 @@ async function boot() {
     mount(app(), topbar('EnglishLab', null), h('div', { class: 'screen' }, '这个浏览器不允许保存数据（可能是隐私模式）。请换普通窗口打开。'));
     return;
   }
+  configureSpeech(() => state.settings);
   initTts();
   applyTheme();
   window.addEventListener('hashchange', route);

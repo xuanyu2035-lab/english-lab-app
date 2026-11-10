@@ -161,3 +161,25 @@ body.immersive .topbar-title { text-align: left; padding-left: 4px; }
 .chunk.used { opacity: .3; }
 .chunk.ok { border-color: var(--good); color: var(--good); }
 .chunk.no { border-color: var(--bad); color: var(--bad); }
+
+/* ---- free choice: jump bar, pick panel, voice settings, help ---- */
+.jump-bar { margin-top: 14px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; }
+.row-wrap.tight { gap: 8px; margin: 8px 0 4px; }
+.chip-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 6px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 15px; font-family: inherit; text-decoration: none; cursor: pointer; }
+.chip-btn.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+.chip-btn.know { border-color: var(--good); color: var(--good); }
+.chip-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.skip-row { margin: 4px 0 0; }
+.pick { margin-top: 10px; }
+.pick summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--accent); }
+.pick-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.pick-row { border-top: 1px solid var(--line); padding-top: 8px; }
+.pick-text { font-size: 15px; }
+.trouble-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.voice-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; max-height: 420px; overflow-y: auto; }
+.voice-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+.voice-row.on { border-color: var(--accent); }
+.voice-name { min-width: 0; flex: 1 1 160px; overflow-wrap: anywhere; }
+.range { width: 100%; min-height: 44px; accent-color: var(--accent); }
+.help-list { padding-left: 20px; line-height: 1.7; }
+.help-list li { margin: 6px 0; }

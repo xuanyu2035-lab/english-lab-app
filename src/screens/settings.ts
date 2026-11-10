@@ -2,6 +2,7 @@ import { validateContentPack } from '../content';
 import { isValidDate, todayStr } from '../dates';
 import { FAMILIAR_START, getSentenceProgress } from '../schedule';
 import { exportBackup, importBackup } from '../backup';
+import { autoVoice, englishVoices, onVoicesChanged, speak, ttsSupported, voiceLabel } from '../media';
 import { loadState, saveContent, saveProgress, saveSettings, scripts, state } from '../store';
 import { SCRIPT_IDS, sentenceId } from '../types';
 import type { Progress, ScriptId, Settings } from '../types';
@@ -135,6 +136,48 @@ function settingsForm(first: boolean, onSave: () => void) {
   return form;
 }
 
+const SAMPLE_LINE = 'Hello, my name is Sam. It is nice to meet you.';
+/** 声音：列出这台设备所有英文声音，逐个试听、选一个；语速、每句重复次数。改了立刻保存。 */
+export function voiceCard(): HTMLElement {
+  const box = h('div', { class: 'card voice-card' });
+  const list = h('div', { class: 'voice-list' });
+  const preview = (v?: SpeechSynthesisVoice) => speak(SAMPLE_LINE, 'en', { voice: v, times: 1 });
+  const drawList = () => {
+    const vs = englishVoices();
+    const auto = autoVoice();
+    const cur = state.settings.voiceURI;
+    const row = (label: string, sub: string, chosen: boolean, onPick: () => void, v?: SpeechSynthesisVoice) =>
+      h('div', { class: `voice-row ${chosen ? 'on' : ''}` },
+        h('div', { class: 'voice-name' }, h('b', {}, label), sub ? h('div', { class: 'muted small' }, sub) : null),
+        h('div', { class: 'row-wrap tight' },
+          btn('▶ 试听', () => preview(v), 'ghost'),
+          h('button', { class: `btn ${chosen ? 'primary' : 'ghost'}`, type: 'button', 'aria-pressed': String(chosen), onclick: onPick }, chosen ? '✓ 正在用' : '用这个')));
+    const pick = async (uri: string | null) => { await saveSettings({ voiceURI: uri }); drawList(); toast(uri ? '已选好这个声音' : '已改回自动选择'); };
+    list.replaceChildren(
+      row('自动（推荐）', auto ? `现在会用：${voiceLabel(auto)}` : '这台设备上没找到英文声音', cur === null || !vs.some((v) => v.voiceURI === cur), () => void pick(null), auto),
+      ...vs.map((v) => row(v.name, `${v.lang.replace('_', '-')}${/^en[-_]US$/i.test(v.lang) ? ' · 美式' : /^en[-_]GB$/i.test(v.lang) ? ' · 英式' : ''}${/natural|neural|enhanced|premium/i.test(v.name) ? ' · 更自然' : ''}`,
+        cur === v.voiceURI, () => void pick(v.voiceURI), v)));
+    if (!vs.length) list.append(h('p', { class: 'muted small' }, '这台设备暂时没有英文声音（或还在加载）。可以看“帮助”里怎么下载。'));
+  };
+  const rateVal = h('b', {}, state.settings.speechRate.toFixed(2) + ' 倍');
+  const rate = h('input', { type: 'range', id: 'f-rate', min: '0.6', max: '1.2', step: '0.05', value: String(state.settings.speechRate), class: 'range' });
+  rate.addEventListener('input', () => { rateVal.textContent = Number(rate.value).toFixed(2) + ' 倍'; });
+  rate.addEventListener('change', () => { void saveSettings({ speechRate: Number(rate.value) }).then(() => preview()); });
+  const rep = h('select', { id: 'f-repeat', class: 'input' }, [1, 2, 3, 4, 5].map((n) => h('option', { value: String(n) }, n === 1 ? '读 1 遍' : `读 ${n} 遍`)));
+  rep.value = String(state.settings.repeatCount);
+  rep.addEventListener('change', () => void saveSettings({ repeatCount: Number(rep.value) }));
+  if (!ttsSupported()) { box.append(h('p', { class: 'muted small' }, '这个浏览器不支持朗读，所以没有声音设置。')); return box; }
+  drawList();
+  onVoicesChanged(() => { if (list.isConnected) drawList(); });
+  box.append(
+    h('p', { class: 'muted small' }, '默认用美式英语，并优先选名字带 Natural / Neural / Enhanced / Premium 的声音。下面是这台设备上所有英文声音，每个都能试听。'),
+    list,
+    h('div', { class: 'field' }, h('label', { class: 'label', for: 'f-rate' }, '语速：', rateVal, '（0.6 慢 – 1.2 快）'), rate),
+    h('div', { class: 'field' }, h('label', { class: 'label', for: 'f-repeat' }, '每句重复次数'), rep),
+    h('a', { class: 'btn ghost', href: '#/help' }, '❓ 怎么下载更自然的美式声音'));
+  return box;
+}
+
 /** 导出耳朵复核反馈清单，给 Owner 去修内容。 */
 function feedbackCard(): HTMLElement {
   const n = Object.keys(state.vocab.feedback).length;
@@ -186,6 +229,8 @@ export function renderSettings() {
   const hasPack = !!state.pack;
   mount(root(), topbar('设置', '/'),
     h('div', { class: 'screen narrow' },
+      h('h3', {}, '声音'),
+      voiceCard(),
       hasPack ? settingsForm(false, () => go('/')) : null,
       h('h3', {}, '内容包'),
       h('p', { class: 'muted small' }, hasPack ? `当前内容：${state.pack!.meta?.title ?? '已导入'}。重新导入会保留学习进度（按句子编号对应）。` : '还没有内容包。'),

@@ -111,6 +111,7 @@ function installHooks() {
   hooks.immersive = state.settings.immersive;
   hooks.timeUp = () => !!S && segLeft() <= 0;
   hooks.advance = advance;
+  hooks.skip = skipSegment;
   hooks.quit = quit;
   hooks.remaining = () => (S ? fmt(segLeft()) : '');
   document.body.classList.toggle('immersive', hooks.immersive);
@@ -123,7 +124,7 @@ function installHooks() {
 }
 function removeHooks() {
   hooks.active = false; hooks.immersive = false;
-  hooks.timeUp = () => false; hooks.advance = () => undefined; hooks.quit = () => undefined; hooks.remaining = () => '';
+  hooks.timeUp = () => false; hooks.advance = () => undefined; hooks.skip = () => undefined; hooks.quit = () => undefined; hooks.remaining = () => '';
   document.body.classList.remove('immersive');
   if (ticker) { clearInterval(ticker); ticker = null; }
   stopNoise();
@@ -156,6 +157,13 @@ function advance() {
   S.segIdx++;
   if (S.segIdx >= S.blocks.length) return showSummary();
   showRest();
+}
+
+/** Skip what is left of this segment (the Owner is free to move on at any time). */
+function skipSegment() {
+  if (!S) return;
+  S.queue = [];
+  advance();
 }
 
 function showRest() {
@@ -209,7 +217,7 @@ function showSummary() {
     const p = getSentenceProgress(state.progress, id, x.no);
     return p.n > 0 && p.last && p.last !== 'smooth';
   }).slice(0, 4).map((x) => `${SCRIPT_NAME[id]} 第 ${x.no} 句：${x.cue}`));
-  mount(root(), topbar('今天学会了什么', null),
+  mount(root(), topbar('今天学会了什么', '/'),
     h('div', { class: 'screen narrow' },
       h('div', { class: 'card focus center' },
         h('div', { class: 'big-emoji' }, '🎓'),

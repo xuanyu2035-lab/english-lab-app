@@ -6,11 +6,10 @@ import {
 } from '../schedule';
 import type { SectionStatus } from '../schedule';
 import { reviewOffsets, saveSettings, scripts, state } from '../store';
-import type { Script, ScriptId } from '../types';
+import type { Script, ScriptId, Sentence } from '../types';
 import { SCRIPT_IDS } from '../types';
-import { dueEntries, introducedCount } from '../vocab';
 import { btn, h, mount, pct, progressBar } from '../ui';
-import { go, topbar } from './practice';
+import { go, knowTest, topbar } from './practice';
 import { importCard } from './settings';
 
 const root = () => document.getElementById('app')!;
@@ -77,41 +76,16 @@ export function renderHome() {
       h('div', { class: 'muted small' }, `句子级别：L1 ${lvls[0]} · L2 ${lvls[1]} · L3 ${lvls[2]} · L4 ${lvls[3]}`));
   });
 
-  mount(root(), topbar('EnglishLab 粤英学习舱', null, h('a', { class: 'back', href: '#/settings' }, '⚙ 设置')),
+  mount(root(), topbar('EnglishLab 粤英学习舱', null, h('a', { class: 'back', href: '#/more' }, '更多 ☰')),
     h('div', { class: 'screen' },
-      sprint ? h('div', { class: 'banner' }, '🔥 考前冲刺：离面试/展示不到 3 天，今天以稿子为主，每天至少全文连说一次。') : null,
-      startCard(),
-      h('details', { class: 'card' }, h('summary', {}, '今天要做的事（预览）'),
-        tasks.length ? h('div', { class: 'task-list' }, tasks) : h('p', { class: 'muted' }, '今天的任务都做完了 👏 想多练可以进下面的稿子。')),
-      h('h2', {}, '我的稿子'),
+      sprint ? h('div', { class: 'banner' }, '🔥 考前冲刺：离面试/展示不到 3 天，稿子优先，每天至少全文连说一次。') : null,
+      h('h2', {}, '我的两篇稿子'),
+      h('p', { class: 'muted small' }, '想练哪篇、哪一节、从哪一句开始，都由你选。点进去就能挑。'),
       h('div', { class: 'grid2' }, cards),
-      state.pack && state.pack.items.length ? vocabCard() : null,
-      h('div', { class: 'row-center' }, btn('📣 难读词跟读', () => go('/hard'), 'ghost'), btn('🧩 造句', () => go('/compose'), 'ghost'), btn('📎 参考页', () => go('/reference'), 'ghost'))));
+      h('details', { class: 'card' }, h('summary', {}, '今日推荐（只是建议，不用照做）'),
+        tasks.length ? h('div', { class: 'task-list' }, tasks) : h('p', { class: 'muted' }, '今天没有特别的建议 👏 想练哪篇都可以。')),
+      h('div', { class: 'row-center' }, btn('更多：一节课、词库、设置、帮助 ☰', () => go('/more'), 'ghost'))));
   void pct;
-}
-
-function vocabCard(): HTMLElement {
-  const p = state.pack!;
-  const n = introducedCount(state.vocab);
-  const due = dueEntries(state.vocab, new Date()).length;
-  return h('a', { class: 'card link-card', href: '#/vocab' },
-    h('div', { class: 'card-title' }, '粤英夹杂词库'),
-    h('div', { class: 'muted small' }, `已学 ${n} / ${p.items.length} 个 · 现在可复习 ${due} 张`),
-    progressBar(n, p.items.length));
-}
-
-function startCard(): HTMLElement {
-  let minutes = state.settings.minutes;
-  const row = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': '这节课多久' });
-  const draw = () => row.replaceChildren(...([30, 60, 90, 120] as const).map((m) => {
-    const b = h('button', { class: `seg-btn ${m === minutes ? 'on' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(m === minutes) }, `${m} 分钟`);
-    b.addEventListener('click', () => { minutes = m; draw(); });
-    return b;
-  }));
-  draw();
-  return h('div', { class: 'card start-card' },
-    h('button', { class: 'btn primary big start-btn', type: 'button', onclick: () => { void saveSettings({ minutes }).then(() => go(`/session/${minutes}`)); } }, '▶ 开始今天的课'),
-    row);
 }
 
 function taskRow(title: string, sub: string, cta: string, onClick: () => void): HTMLElement {
@@ -154,8 +128,10 @@ export function renderScript(id: ScriptId) {
       next ? h('div', { class: 'muted small' }, dueNow ? '🔔 今天该复习这一节' : `下次复习：${next}`) : null,
       h('div', { class: 'row-wrap' },
         btn(st === 'new' ? '开始学' : st === 'solid' ? '再学一遍' : '继续学', () => go(`/script/${id}/learn/${sec.no}`), 'primary'),
+        btn('✅ 这节我会了', () => knowTest(id, sents, `我会了：小节 ${sec.no} · ${sec.name}`, `/script/${id}`), 'ghost'),
         btn('连说', () => go(`/script/${id}/chain/${sec.no}`), 'ghost'),
-        dueNow ? btn('复习', () => go(`/script/${id}/review/${sec.no}/${dueNow.offset}`), 'ghost') : null));
+        dueNow ? btn('复习', () => go(`/script/${id}/review/${sec.no}/${dueNow.offset}`), 'ghost') : null),
+      pickPanel(id, sec.no, sents));
   });
   const tools = h('div', { class: 'row-wrap' },
     btn('🔁 全文连说', () => go(`/script/${id}/full`), 'primary'),
@@ -172,4 +148,24 @@ export function renderScript(id: ScriptId) {
         h('div', { class: 'muted small' }, scr.goal === 'verbatim' ? '目标：一字不差背下来' : '目标：尽量背下来（忘词可用救场词）'),
         h('div', { class: 'muted small' }, `小节 ${solid} / ${total} 会了`), progressBar(solid, total)),
       tools, h('div', { class: 'sec-list' }, rows)));
+}
+
+const LEVELS: [string, string][] = [['understand', '先看懂'], ['L1', '全文'], ['L2', '挖空'], ['L3', '只看线索'], ['L4', '什么都不看']];
+/** Free choice inside one section: start at any level, or pick any sentence (with its own level and "I know it"). */
+function pickPanel(id: ScriptId, secNo: number, sents: Sentence[]): HTMLElement {
+  const lv = (startNo: number, level: string, label: string) =>
+    h('a', { class: 'chip-btn', href: `#/script/${id}/learn/${secNo}/${startNo}/${level}` }, label);
+  return h('details', { class: 'pick' },
+    h('summary', {}, '自己选：从哪一级、哪一句开始'),
+    h('div', { class: 'muted small' }, '整节都从这一级开始：'),
+    h('div', { class: 'row-wrap tight' }, LEVELS.map(([lvl, label]) => lv(0, lvl, label))),
+    h('div', { class: 'muted small' }, '或者挑一句（每句都能选级别，也能直接测“我会了”）：'),
+    h('div', { class: 'pick-list' }, sents.map((x) => {
+      const p = getSentenceProgress(state.progress, id, x.no);
+      return h('div', { class: 'pick-row' },
+        h('div', { class: 'pick-text' }, h('b', {}, `第 ${x.no} 句`), ` ${p.passedL4 ? '✓ ' : ''}${x.cue}`),
+        h('div', { class: 'row-wrap tight' },
+          LEVELS.filter(([l]) => l !== 'L2' || x.blank_keys.length > 0).map(([lvl, label]) => lv(x.no, lvl, label)),
+          h('button', { class: 'chip-btn know', type: 'button', onclick: () => knowTest(id, [x], `我会了：第 ${x.no} 句`, `/script/${id}`) }, '✅ 我会了')));
+    })));
 }
