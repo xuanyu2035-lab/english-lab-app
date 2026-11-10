@@ -1,0 +1,31 @@
+{
+  "name": "english-lab",
+  "version": "1.0.0",
+  "description": "EnglishLab 粤英学习舱 (PWA)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173",
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e-screenshots.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "pdf": "node scripts/make-pdf.mjs",
+    "pack": "node scripts/pack-portable.mjs",
+    "serve": "node scripts/serve.mjs dist 4173"
+  },
+  "type": "module",
+  "dependencies": {
+    "ts-fsrs": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "fake-indexeddb": "^6.2.8",
+    "marked": "^18.1.3",
+    "playwright": "^1.65.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.1.0"
+  },
+  "private": true
+}

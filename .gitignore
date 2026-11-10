@@ -1,0 +1,10 @@
+node_modules
+dist
+private/
+test-results
+/screenshots/
+*.log
+.claude/
+screenshots-private/
+EnglishLab_ClaudeCode任务书*.md
+EnglishLab-便携版/
